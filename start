@@ -1,0 +1,75 @@
+#!/bin/bash
+
+set -euo pipefail
+
+DB_NAME="slack_stats"
+
+echo
+docker rm --force $DB_NAME &>/dev/null
+docker rm --force sqlpad &>/dev/null
+docker network rm $DB_NAME &>/dev/null
+echo "  ✔️  Pre-emptive cleanup"
+
+docker pull postgres:latest 1>/dev/null
+docker pull sqlpad/sqlpad:latest 1>/dev/null
+npm install 1>/dev/null
+echo "  ✔️  Dependencies fetched"
+
+docker network create $DB_NAME 1>/dev/null
+
+docker run \
+	--detach \
+	--name $DB_NAME \
+	--env POSTGRES_PASSWORD=postgres \
+	--publish 54320:5432 \
+	--hostname $DB_NAME \
+	--network $DB_NAME \
+	postgres 1>/dev/null
+
+wait_for() {
+	SECONDS=0
+	TIMEOUT="$1"
+	while true; do
+		docker exec $DB_NAME pg_isready &>/dev/null && return 0
+		(($SECONDS > $TIMEOUT)) && break
+		SECONDS+=1
+		sleep 1
+	done
+	echo "  ❌ pg_isready failed"
+	return 1
+}
+wait_for 5
+echo "  ✔️  Container started"
+
+docker exec $DB_NAME psql -U postgres -c "CREATE DATABASE $DB_NAME;" 1>/dev/null
+echo "  ✔️  Database created"
+
+node index.js
+
+docker run \
+	--detach \
+	--name sqlpad \
+	--env SQLPAD_AUTH_DISABLED=true \
+	--env SQLPAD_AUTH_DISABLED_DEFAULT_ROLE=admin \
+	--env SQLPAD_APP_LOG_LEVEL=debug \
+	--env SQLPAD_WEB_LOG_LEVEL=info \
+	--env "SQLPAD_CONNECTIONS__${DB_NAME}__name"="Slack Stats" \
+	--env "SQLPAD_CONNECTIONS__${DB_NAME}__driver"=postgres \
+	--env "SQLPAD_CONNECTIONS__${DB_NAME}__host"=$DB_NAME \
+	--env "SQLPAD_CONNECTIONS__${DB_NAME}__port"=5432 \
+	--env "SQLPAD_CONNECTIONS__${DB_NAME}__database"=$DB_NAME \
+	--env "SQLPAD_CONNECTIONS__${DB_NAME}__username"=postgres \
+	--env "SQLPAD_CONNECTIONS__${DB_NAME}__password"=postgres \
+	--publish 3000:3000 \
+	--hostname sqlpad \
+	--network $DB_NAME \
+	--volume $PWD/volumes/sqlpad:/var/lib/sqlpad \
+	sqlpad/sqlpad:latest 1>/dev/null
+echo "  ✔️  DB Client started"
+
+echo "  ✔️  Done!"
+echo
+echo "  Connection string >>> postgresql://postgres:postgres@localhost/$DB_NAME"
+echo "            Explore >>> docker exec -it $DB_NAME psql -U postgres $DB_NAME"
+echo "          Or SQLPad >>> http://localhost:3000/queries/new"
+echo
