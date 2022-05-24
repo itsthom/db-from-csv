@@ -22,6 +22,7 @@ Entry point is [./start](./start). Running this script will:
 1. "Export CSV"
 1. Slackbot will DM you the CSV when it's ready
 1. Replace [input.csv](./input.csv) with the thing you just downloaded
-  - alternatively, run the script as is with the sample input and then run just the parsing script passing your CSV as an argument, e.g. `./start && node index.js the-csv-i-downloaded.csv`
 1. run `./start`
 1. Script will print a few ways to access data
+
+Alternatively, run the script as is with the sample input and then run just the parsing script passing your CSV as an argument, e.g. `./start && node index.js the-csv-i-downloaded.csv`
